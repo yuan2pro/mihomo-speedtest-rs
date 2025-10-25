@@ -55,11 +55,12 @@ pub struct SpeedTestResult {
     pub upload_time: Option<Duration>,
     pub error: Option<String>,
     pub timestamp: DateTime<Utc>,
+    pub proxy_config: ProxyConfig,
 }
 
 impl SpeedTestResult {
     /// Create a new failed result
-    pub fn failed(proxy_name: String, proxy_type: crate::config::ProxyType, error: String) -> Self {
+    pub fn failed(proxy_name: String, proxy_type: crate::config::ProxyType, proxy: ProxyConfig,error: String) -> Self {
         Self {
             proxy_name,
             proxy_type,
@@ -72,6 +73,7 @@ impl SpeedTestResult {
             upload_time: None,
             error: Some(error),
             timestamp: Utc::now(),
+            proxy_config: proxy,
         }
     }
 
@@ -88,6 +90,8 @@ impl SpeedTestResult {
         if self.download_speed > 0.0 {
             let mbps = self.download_speed / (1024.0 * 1024.0);
             format!("{mbps:.2} MB/s")
+        } else if let Some(ref error) = self.error {
+            format!("Failed ({})", error)
         } else {
             "Failed".to_string()
         }
@@ -98,6 +102,8 @@ impl SpeedTestResult {
         if self.upload_speed > 0.0 {
             let mbps = self.upload_speed / (1024.0 * 1024.0);
             format!("{mbps:.2} MB/s")
+        } else if let Some(ref error) = self.error {
+            format!("Failed ({})", error)
         } else {
             "Failed".to_string()
         }
@@ -143,6 +149,7 @@ impl SpeedTester {
                 return Ok(SpeedTestResult::failed(
                     proxy.name.clone(),
                     proxy.proxy_type.clone(),
+                    proxy.clone(),
                     format!("Latency test failed: {e}"),
                 ));
             }
@@ -162,6 +169,7 @@ impl SpeedTester {
                 upload_time: None,
                 error: None,
                 timestamp: start_time,
+                proxy_config: proxy.clone(),
             });
         }
 
@@ -211,6 +219,7 @@ impl SpeedTester {
             upload_time: upload_result.as_ref().map(|r| r.duration),
             error: None,
             timestamp: start_time,
+            proxy_config: proxy.clone(),
         })
     }
 

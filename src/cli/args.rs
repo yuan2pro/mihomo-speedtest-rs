@@ -10,7 +10,7 @@ use std::time::Duration;
 #[command(version = env!("CARGO_PKG_VERSION"))]
 pub struct Cli {
     /// Config file path or HTTP(S) URL
-    #[arg(short = 'c', long = "config", required_unless_present_any = ["show_author", "show_about"])]
+    #[arg(short = 'c', long = "config", default_value="/Volumes/PNY/Github/sub_merge/sub/merged_proxies_1.yaml")]
     pub config_paths: Option<String>,
 
     /// Filter proxies by name using regex
@@ -50,7 +50,7 @@ pub struct Cli {
     pub concurrent: usize,
 
     /// Output config file path
-    #[arg(short = 'o', long = "output")]
+    #[arg(short = 'o', long = "output", default_value = "output.yaml")]
     pub output: Option<String>,
 
     /// Filter out proxies with latency greater than this (milliseconds or duration like "800ms")
@@ -66,11 +66,11 @@ pub struct Cli {
     pub min_upload_speed: f64,
 
     /// Fast mode: only test latency
-    #[arg(long = "fast")]
+    #[arg(long = "fast", default_value = "false")]
     pub fast_mode: bool,
 
     /// Rename nodes with location and speed info
-    #[arg(long = "rename")]
+    #[arg(long = "rename", default_value = "true")]
     pub rename_nodes: bool,
 
     /// Enable Stash compatibility mode
@@ -86,11 +86,11 @@ pub struct Cli {
     pub verbose: bool,
 
     /// Maximum number of proxies to test concurrently
-    #[arg(long = "max-concurrent", default_value = "1")]
+    #[arg(long = "max-concurrent", default_value = "5")]
     pub max_concurrent: usize,
 
     /// Use mihomo process for real proxy testing
-    #[arg(long = "use-mihomo")]
+    #[arg(long = "use-mihomo", default_value = "true")]
     pub use_mihomo: bool,
 
     /// Path to mihomo binary (auto-detect if not specified)
@@ -263,7 +263,7 @@ impl Cli {
 
         table.add_numeric_param(
             "max-concurrent",
-            1_usize,
+            5_usize,
             self.max_concurrent,
             "Maximum proxies to test concurrently",
         );
@@ -300,7 +300,7 @@ impl Cli {
 
         table.add_bool_param(
             "rename-nodes",
-            false,
+            true,
             self.rename_nodes,
             "Rename nodes with location and speed info",
         );

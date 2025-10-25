@@ -2,6 +2,7 @@ use crate::Result;
 use crate::config::ProxyConfig;
 use crate::core::mihomo_runner::MihomoRunner;
 use crate::core::{SpeedTestConfig, SpeedTestResult};
+use crate::cli::progress::SpeedTestProgress;
 use chrono::Utc;
 use std::time::Duration;
 use tracing::{debug, info, warn};
@@ -23,6 +24,15 @@ impl RealSpeedTester {
 
     /// Start mihomo and run speed tests
     pub async fn test_proxies(&mut self, proxies: &[ProxyConfig]) -> Result<Vec<SpeedTestResult>> {
+        self.test_proxies_with_progress(proxies, None).await
+    }
+
+    /// Start mihomo and run speed tests with optional progress callback
+    pub async fn test_proxies_with_progress(
+        &mut self,
+        proxies: &[ProxyConfig],
+        progress: Option<&SpeedTestProgress>,
+    ) -> Result<Vec<SpeedTestResult>> {
         info!("Starting real proxy speed tests with mihomo process");
 
         // Generate and start mihomo with configuration
@@ -34,7 +44,12 @@ impl RealSpeedTester {
         for proxy in proxies {
             info!("Testing proxy: {}", proxy.name);
             let result = self.test_single_proxy(proxy).await;
-            results.push(result);
+            results.push(result.clone());
+
+            // Update progress if provided
+            if let Some(progress) = progress {
+                progress.update(&result);
+            }
         }
 
         // Stop mihomo process
@@ -63,6 +78,7 @@ impl RealSpeedTester {
                 upload_time: None,
                 error: Some(format!("Failed to switch proxy: {e}")),
                 timestamp: start_time,
+                proxy_config: proxy.clone(),
             };
         }
 
@@ -85,6 +101,7 @@ impl RealSpeedTester {
                     upload_time: None,
                     error: Some(format!("Latency test failed: {e}")),
                     timestamp: start_time,
+                    proxy_config: proxy.clone(),
                 };
             }
         };
@@ -109,6 +126,7 @@ impl RealSpeedTester {
                             max_latency.as_millis()
                         )),
                         timestamp: start_time,
+                        proxy_config: proxy.clone(),
                     };
                 }
             }
@@ -128,6 +146,7 @@ impl RealSpeedTester {
                 upload_time: None,
                 error: None,
                 timestamp: start_time,
+                proxy_config: proxy.clone(),
             };
         }
 
@@ -147,6 +166,7 @@ impl RealSpeedTester {
             upload_time,
             error: bandwidth_error,
             timestamp: start_time,
+            proxy_config: proxy.clone(),
         }
     }
 

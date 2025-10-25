@@ -23,7 +23,6 @@ async fn main() {
         println!("{}", env!("CARGO_PKG_DESCRIPTION"));
         return;
     }
-
     // Ensure config is provided for normal operation
     let config_paths = match &args.config_paths {
         Some(paths) => paths.clone(),
@@ -43,10 +42,14 @@ async fn main() {
     tracing_subscriber::fmt()
         .with_max_level(log_level)
         .with_target(false)
+        .with_thread_ids(true)
+        .with_file(true)
+        .with_line_number(true)
         .init();
 
     if let Err(e) = run(args, &config_paths).await {
         error!("Application error: {}", e);
+        eprintln!("Application error: {}", e);
         process::exit(1);
     }
 }
@@ -135,7 +138,10 @@ async fn run(args: Cli, config_paths: &str) -> mihomo_speedtest_rs::Result<()> {
         )?;
 
         let mut real_tester = RealSpeedTester::new(mihomo_runner, config);
-        real_tester.test_proxies(&proxies).await?
+        let progress = SpeedTestProgress::new(proxies.len() as u64);
+        let results = real_tester.test_proxies_with_progress(&proxies, Some(&progress)).await?;
+        progress.finish_with_message("Speed tests completed!");
+        results
     } else {
         // Use original direct testing method
         let tester = SpeedTester::new(config);
@@ -149,14 +155,12 @@ async fn run(args: Cli, config_paths: &str) -> mihomo_speedtest_rs::Result<()> {
             results
         } else {
             let progress = SpeedTestProgress::new(proxies.len() as u64);
+            let progress_clone = progress.clone();
             let results = tester
                 .test_proxies(
                     proxies.clone(),
-                    Some(Box::new({
-                        let progress = SpeedTestProgress::new(proxies.len() as u64);
-                        move |result| {
-                            progress.update(result);
-                        }
+                    Some(Box::new(move |result| {
+                        progress_clone.update(result);
                     })),
                 )
                 .await?;
@@ -169,30 +173,28 @@ async fn run(args: Cli, config_paths: &str) -> mihomo_speedtest_rs::Result<()> {
     let filtered_results: Vec<_> = results
         .into_iter()
         .filter(|result| {
-            if !result.is_successful() {
-                return false;
-            }
-
-            // Check latency
+            // Primary success criteria: has latency and latency is within acceptable range
             if let Some(latency) = result.latency {
-                if latency > args.max_latency {
-                    return false;
+                if latency <= args.max_latency {
+                    // Additional criteria for non-fast mode
+                    if !args.fast_mode {
+                        // Check download speed (convert MB/s to bytes/s)
+                        let min_download_bytes = args.min_download_speed * 1024.0 * 1024.0;
+                        if result.download_speed < min_download_bytes {
+                            return false;
+                        }
+
+                        // Check upload speed (convert MB/s to bytes/s)
+                        let min_upload_bytes = args.min_upload_speed * 1024.0 * 1024.0;
+                        if result.upload_speed < min_upload_bytes {
+                            return false;
+                        }
+                    }
+                    return true;
                 }
             }
 
-            // Check download speed (convert MB/s to bytes/s)
-            let min_download_bytes = args.min_download_speed * 1024.0 * 1024.0;
-            if result.download_speed < min_download_bytes && !args.fast_mode {
-                return false;
-            }
-
-            // Check upload speed (convert MB/s to bytes/s)
-            let min_upload_bytes = args.min_upload_speed * 1024.0 * 1024.0;
-            if result.upload_speed < min_upload_bytes && !args.fast_mode {
-                return false;
-            }
-
-            true
+            false
         })
         .collect();
 
@@ -216,11 +218,11 @@ async fn run(args: Cli, config_paths: &str) -> mihomo_speedtest_rs::Result<()> {
 
         if args.rename_nodes {
             let renamed_proxies =
-                ConfigExporter::rename_proxies_with_stats(&proxies, &filtered_results);
-            ConfigExporter::export_clash_config(&filtered_results, &renamed_proxies, output_path)
+                ConfigExporter::rename_proxies_with_stats( &filtered_results);
+            ConfigExporter::export_clash_config(&renamed_proxies, output_path)
                 .await?;
         } else {
-            ConfigExporter::export_clash_config(&filtered_results, &proxies, output_path).await?;
+            ConfigExporter::export_clash_config(&filtered_results, output_path).await?;
         }
 
         info!("✅ Export completed");

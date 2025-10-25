@@ -3,6 +3,7 @@ use crate::config::{ClashConfig, ProxyConfig, ProxyParameters, ProxyType};
 use base64::{Engine as _, engine::general_purpose};
 use regex::Regex;
 use tracing::{debug, info, warn};
+use std::collections::HashMap;
 
 /// Configuration loader for Clash config files
 pub struct ConfigLoader {
@@ -77,6 +78,7 @@ impl ConfigLoader {
     async fn load_from_file(&self, path: &str) -> Result<Vec<ProxyConfig>> {
         debug!("Loading config from file: {}", path);
 
+        // 修复：确保正确读取整个文件内容
         let content = tokio::fs::read_to_string(path)
             .await
             .map_err(|e| anyhow::anyhow!("Failed to read file {}: {}", path, e))?;
@@ -100,53 +102,114 @@ impl ConfigLoader {
 
     /// Parse decoded content (could be YAML, JSON, or proxy list)
     fn parse_decoded_content(&self, content: &str) -> Result<Vec<ProxyConfig>> {
-        // Try YAML parsing with proxy extraction first
-        if let Ok(proxies) = self.extract_proxies_from_yaml(content) {
-            if !proxies.is_empty() {
-                debug!("Successfully extracted {} proxies from YAML", proxies.len());
-                return Ok(proxies);
+        // 先检查是否是YAML格式的内容（检查是否有YAML特有的字符）
+        if content.contains("proxies:") && (content.contains("- name:") || content.contains("- server:")) {
+            // 尝试从YAML中提取proxies部分
+            if let Ok(proxies) = self.extract_proxies_from_yaml(content) {
+                if !proxies.is_empty() {
+                    debug!("Successfully extracted {} proxies from YAML", proxies.len());
+                    return Ok(proxies);
+                }
             }
-        }
 
-        // Try full YAML structure parsing
-        match serde_yaml::from_str::<ClashConfig>(content) {
-            Ok(config) => {
-                debug!("Successfully parsed as complete YAML config");
-                Ok(config.proxies)
-            }
-            Err(yaml_err) => {
-                debug!("Full YAML parsing failed: {}", yaml_err);
-
-                // Try JSON
-                match serde_json::from_str::<ClashConfig>(content) {
-                    Ok(config) => {
-                        debug!("Successfully parsed as JSON");
-                        Ok(config.proxies)
+            // 尝试完整YAML结构解析
+            match serde_yaml::from_str::<ClashConfig>(content) {
+                Ok(config) => {
+                    debug!("Successfully parsed as complete YAML config with {} proxies", config.proxies.len());
+                    if !config.proxies.is_empty() {
+                        return Ok(config.proxies);
                     }
-                    Err(json_err) => {
-                        debug!("JSON parsing failed: {}", json_err);
-
-                        // Try parsing as a simple proxy list or subscription format
-                        self.parse_subscription_content(content)
-                    }
+                }
+                Err(yaml_err) => {
+                    debug!("Full YAML parsing failed: {}", yaml_err);
                 }
             }
         }
+
+        // Try direct YAML parsing of just the proxies array
+        if content.trim_start().starts_with("proxies:") {
+            // Try to parse just the proxies section directly
+            let parsed: HashMap<String, Vec<ProxyConfig>> = serde_yaml::from_str(content)
+                .map_err(|e| anyhow::anyhow!("Failed to parse proxies-only YAML: {}", e))?;
+            
+            if let Some(proxies) = parsed.get("proxies") {
+                if !proxies.is_empty() {
+                    debug!("Successfully parsed proxies-only YAML with {} proxies", proxies.len());
+                    return Ok(proxies.clone());
+                }
+            }
+        }
+
+        // Try JSON
+        match serde_json::from_str::<ClashConfig>(content) {
+            Ok(config) => {
+                debug!("Successfully parsed as JSON");
+                return Ok(config.proxies);
+            }
+            Err(json_err) => {
+                debug!("JSON parsing failed: {}", json_err);
+            }
+        }
+
+        // Only try subscription parsing for content that looks like subscription data
+        // (contains proxy:// urls or other subscription-like formats)
+        if content.contains("://") {
+            return self.parse_subscription_content(content);
+        }
+
+        // If we get here, we couldn't parse the content as any known format
+        Err(anyhow::anyhow!("No valid proxies found in configuration"))
     }
 
     /// Extract proxies from YAML by parsing just the proxies section
     fn extract_proxies_from_yaml(&self, content: &str) -> Result<Vec<ProxyConfig>> {
         // Parse as generic YAML value first
-        let yaml_value: serde_yaml::Value = serde_yaml::from_str(content)?;
+        let yaml_value: serde_yaml::Value = serde_yaml::from_str(content)
+            .map_err(|e| anyhow::anyhow!("Failed to parse YAML: {}", e))?;
 
         // Extract the 'proxies' field
         if let Some(proxies_value) = yaml_value.get("proxies") {
-            // Try to deserialize the proxies array
-            let proxies: Vec<ProxyConfig> = serde_yaml::from_value(proxies_value.clone())
-                .map_err(|e| anyhow::anyhow!("Failed to parse proxies section: {}", e))?;
-            Ok(proxies)
+            // If it's an array, try to deserialize each proxy individually
+            if let Some(proxies_array) = proxies_value.as_sequence() {
+                let mut proxies = Vec::new();
+                for (index, proxy_value) in proxies_array.iter().enumerate() {
+                    match serde_yaml::from_value::<ProxyConfig>(proxy_value.clone()) {
+                        Ok(proxy) => proxies.push(proxy),
+                        Err(e) => {
+                            warn!("Failed to parse proxy at index {}: {} - {:?}", index, e, proxy_value);
+                            // Continue with other proxies
+                        }
+                    }
+                }
+                
+                debug!("Parsed {} valid proxies out of {} total", proxies.len(), proxies_array.len());
+                return Ok(proxies);
+            }
+            
+            // Try to deserialize the proxies array as a whole
+            match serde_yaml::from_value::<Vec<ProxyConfig>>(proxies_value.clone()) {
+                Ok(proxies) => {
+                    debug!("Successfully parsed {} proxies as array", proxies.len());
+                    return Ok(proxies);
+                },
+                Err(e) => {
+                    debug!("Failed to parse proxies section as array: {}", e);
+                }
+            }
+            
+            Err(anyhow::anyhow!("No valid proxies found in YAML proxies section"))
         } else {
-            Err(anyhow::anyhow!("No 'proxies' field found in YAML"))
+            // Try to parse the entire content as a proxies array if it doesn't have the "proxies:" key
+            match serde_yaml::from_str::<Vec<ProxyConfig>>(content) {
+                Ok(proxies) => {
+                    debug!("Successfully parsed {} proxies directly from content", proxies.len());
+                    Ok(proxies)
+                },
+                Err(e) => {
+                    debug!("Failed to parse content directly as proxies array: {}", e);
+                    Err(anyhow::anyhow!("No 'proxies' field found in YAML"))
+                }
+            }
         }
     }
 
@@ -270,10 +333,30 @@ impl ConfigLoader {
                 config_part.to_string()
             };
 
+        // For some formats, if no @ found, try double decoding
+        let config_to_parse = if decoded_config.contains('@') {
+            decoded_config
+        } else {
+            // Try secondary base64 decoding
+            if let Ok(secondary_decoded_bytes) = general_purpose::STANDARD.decode(&decoded_config) {
+                if let Ok(secondary_decoded_str) = String::from_utf8(secondary_decoded_bytes) {
+                    if secondary_decoded_str.contains('@') {
+                        secondary_decoded_str
+                    } else {
+                        return Err(anyhow::anyhow!("Invalid Shadowsocks URL format: no @ separator found"));
+                    }
+                } else {
+                    return Err(anyhow::anyhow!("Invalid Shadowsocks URL format: secondary decode utf8 error"));
+                }
+            } else {
+                return Err(anyhow::anyhow!("Invalid Shadowsocks URL format: unable to decode and find @ separator"));
+            }
+        };
+
         // Parse method:password@server:port
-        if let Some(at_pos) = decoded_config.rfind('@') {
-            let auth_part = &decoded_config[..at_pos];
-            let server_part = &decoded_config[at_pos + 1..];
+        if let Some(at_pos) = config_to_parse.rfind('@') {
+            let auth_part = &config_to_parse[..at_pos];
+            let server_part = &config_to_parse[at_pos + 1..];
 
             // Parse server:port
             let (server, port) = if let Some(colon_pos) = server_part.rfind(':') {

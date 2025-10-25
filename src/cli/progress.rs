@@ -1,9 +1,10 @@
 use crate::core::SpeedTestResult;
 use indicatif::{ProgressBar, ProgressStyle};
+use std::sync::{Arc, Mutex};
 
 /// Progress bar for speed testing
 pub struct SpeedTestProgress {
-    bar: ProgressBar,
+    bar: Arc<Mutex<ProgressBar>>,
 }
 
 impl SpeedTestProgress {
@@ -18,43 +19,63 @@ impl SpeedTestProgress {
                 .unwrap()
                 .progress_chars("#>-"),
         );
-        bar.set_message("Initializing...");
+        // bar.set_message("Initializing...");
 
-        Self { bar }
+        Self {
+            bar: Arc::new(Mutex::new(bar))
+        }
     }
 
     /// Update progress with a new result
     pub fn update(&self, result: &SpeedTestResult) {
-        self.bar.inc(1);
+        if let Ok(bar) = self.bar.lock() {
+            bar.inc(1);
 
-        let status = if result.is_successful() {
-            format!("✓ {} ({}ms)", result.proxy_name, result.format_latency())
-        } else {
-            format!("✗ {} (Failed)", result.proxy_name)
-        };
+            let status = if result.is_successful() {
+                format!("✓ {} ({})", result.proxy_name, result.format_latency())
+            } else {
+                format!("✗ {} (Failed)", result.proxy_name)
+            };
 
-        self.bar.set_message(status);
+            bar.set_message(status);
+        }
     }
 
     /// Set a custom message
     pub fn set_message(&self, msg: &str) {
-        self.bar.set_message(msg.to_string());
+        if let Ok(bar) = self.bar.lock() {
+            bar.set_message(msg.to_string());
+        }
     }
 
     /// Finish the progress bar
     pub fn finish_with_message(&self, msg: &str) {
-        self.bar.finish_with_message(msg.to_string());
+        if let Ok(bar) = self.bar.lock() {
+            bar.finish_with_message(msg.to_string());
+        }
     }
 
     /// Clear the progress bar (not available in all versions)
     pub fn clear(&self) {
         // Clear is not available in all versions of indicatif
-        // self.bar.clear();
+        // if let Ok(mut bar) = self.bar.lock() {
+        //     bar.clear();
+        // }
     }
 }
 
 impl Drop for SpeedTestProgress {
     fn drop(&mut self) {
-        self.bar.finish_and_clear();
+        if let Ok(bar) = self.bar.lock() {
+            bar.finish_and_clear();
+        }
+    }
+}
+
+impl Clone for SpeedTestProgress {
+    fn clone(&self) -> Self {
+        Self {
+            bar: Arc::clone(&self.bar)
+        }
     }
 }

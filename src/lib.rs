@@ -14,7 +14,7 @@ pub mod output;
 
 // Re-export commonly used types for convenience
 pub use config::{ProxyConfig, ProxyParameters, ProxyType};
-pub use core::{SpeedTestConfig, SpeedTestResult, SpeedTester};
+pub use core::{SpeedTestConfig, SpeedTestResult, SpeedTester, RealSpeedTester, MihomoRunner};
 pub use network::{BandwidthResult, LatencyResult};
 
 /// Result type used throughout the library

@@ -11,27 +11,19 @@ impl ConfigExporter {
     /// Export successful proxies to a Clash config file
     pub async fn export_clash_config<P: AsRef<Path>>(
         results: &[SpeedTestResult],
-        original_proxies: &[ProxyConfig],
         output_path: P,
     ) -> Result<()> {
-        // Filter successful results
-        let successful_names: std::collections::HashSet<_> = results
+ 
+        // Filter original proxy configs to keep only successful ones
+        let successful_proxies: Vec<ProxyConfig> = results
             .iter()
             .filter(|r| r.is_successful())
-            .map(|r| &r.proxy_name)
-            .collect();
-
-        // Filter original proxy configs to keep only successful ones
-        let successful_proxies: Vec<_> = original_proxies
-            .iter()
-            .filter(|proxy| successful_names.contains(&proxy.name))
-            .cloned()
+            .map(|r| r.proxy_config.clone())
             .collect();
 
         // Create Clash config structure
         let config = ClashConfig {
             proxies: successful_proxies,
-            proxy_providers: None,
             other: HashMap::new(),
         };
 
@@ -56,24 +48,20 @@ impl ConfigExporter {
 
     /// Generate renamed proxies with speed and location info
     pub fn rename_proxies_with_stats(
-        original_proxies: &[ProxyConfig],
         results: &[SpeedTestResult],
-    ) -> Vec<ProxyConfig> {
-        let results_map: HashMap<_, _> = results.iter().map(|r| (&r.proxy_name, r)).collect();
-
-        original_proxies
+    ) -> Vec<SpeedTestResult> {
+        results
             .iter()
-            .map(|proxy| {
-                if let Some(result) = results_map.get(&proxy.name) {
-                    if result.is_successful() {
-                        let mut renamed_proxy = proxy.clone();
-                        renamed_proxy.name = Self::generate_new_name(proxy, result);
-                        renamed_proxy
-                    } else {
-                        proxy.clone()
+            .map(|result| {
+                if result.is_successful() {
+                    let mut renamed_proxy = result.proxy_config.clone();
+                    renamed_proxy.name = Self::generate_new_name(&result.proxy_config, result);
+                    SpeedTestResult {
+                        proxy_config: renamed_proxy,
+                        ..result.clone()
                     }
                 } else {
-                    proxy.clone()
+                    result.clone()
                 }
             })
             .collect()
@@ -87,8 +75,8 @@ impl ConfigExporter {
         // Try to extract location from original name or use server
         let location = Self::extract_location(&proxy.name)
             .unwrap_or_else(|| Self::guess_location_from_server(&proxy.server));
-
-        format!("{location} | 📈 {speed_mbps:.1}MB/s | ⏱️ {latency_ms}ms")
+        let proxy_name = proxy.name.clone();
+        format!("{location} | {proxy_name} | 📈 {speed_mbps:.1}MB/s | ⏱️ {latency_ms}ms")
     }
 
     /// Extract location from proxy name

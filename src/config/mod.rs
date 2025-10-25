@@ -86,76 +86,93 @@ pub struct ProxyConfig {
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct ProxyParameters {
     // Common TLS settings
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub tls: Option<bool>,
-    #[serde(rename = "skip-cert-verify")]
+    #[serde(rename = "skip-cert-verify", skip_serializing_if = "Option::is_none")]
     pub skip_cert_verify: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub sni: Option<String>,
 
     // Authentication
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub username: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub password: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub uuid: Option<String>,
 
     // Shadowsocks specific
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub cipher: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub plugin: Option<String>,
-    #[serde(rename = "plugin-opts")]
+    #[serde(rename = "plugin-opts", skip_serializing_if = "Option::is_none")]
     pub plugin_opts: Option<HashMap<String, serde_yaml::Value>>,
 
     // VMess/VLESS specific
-    #[serde(rename = "alterId")]
+    #[serde(rename = "alterId", skip_serializing_if = "Option::is_none")]
     pub alter_id: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub security: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub flow: Option<String>,
 
     // Transport options
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub network: Option<String>,
-    #[serde(rename = "ws-opts")]
+    #[serde(rename = "ws-opts", skip_serializing_if = "Option::is_none")]
     pub ws_opts: Option<HashMap<String, serde_yaml::Value>>,
-    #[serde(rename = "grpc-opts")]
+    #[serde(rename = "grpc-opts", skip_serializing_if = "Option::is_none")]
     pub grpc_opts: Option<HashMap<String, serde_yaml::Value>>,
-    #[serde(rename = "h2-opts")]
+    #[serde(rename = "h2-opts", skip_serializing_if = "Option::is_none")]
     pub h2_opts: Option<HashMap<String, serde_yaml::Value>>,
 
     // Hysteria specific
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub protocol: Option<String>,
-    #[serde(default, deserialize_with = "deserialize_string_or_number")]
+    #[serde(default, deserialize_with = "deserialize_string_or_number", skip_serializing_if = "Option::is_none")]
     pub up: Option<String>,
-    #[serde(default, deserialize_with = "deserialize_string_or_number")]
+    #[serde(default, deserialize_with = "deserialize_string_or_number", skip_serializing_if = "Option::is_none")]
     pub down: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub auth: Option<String>,
-    #[serde(rename = "auth-str")]
+    #[serde(rename = "auth-str", skip_serializing_if = "Option::is_none")]
     pub auth_str: Option<String>,
-    #[serde(rename = "ca-str")]
+    #[serde(rename = "ca-str", skip_serializing_if = "Option::is_none")]
     pub ca_str: Option<String>,
 
     // Additional common fields
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub udp: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub tfo: Option<bool>,
-    #[serde(rename = "client-fingerprint")]
+    #[serde(rename = "client-fingerprint", skip_serializing_if = "Option::is_none")]
     pub client_fingerprint: Option<String>,
 
     // Hysteria2 specific fields (ports field for port ranges)
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub ports: Option<String>,
 
     // Trojan/TLS specific fields
-    #[serde(rename = "alpn")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub alpn: Option<Vec<String>>,
-    #[serde(rename = "fingerprint")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub fingerprint: Option<String>,
 
     // Connection optimization
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub mptcp: Option<bool>,
-    #[serde(rename = "ip-version")]
+    #[serde(rename = "ip-version", skip_serializing_if = "Option::is_none")]
     pub ip_version: Option<String>,
-    #[serde(rename = "interface-name")]
+    #[serde(rename = "interface-name", skip_serializing_if = "Option::is_none")]
     pub interface_name: Option<String>,
-    #[serde(rename = "routing-mark")]
+    #[serde(rename = "routing-mark", skip_serializing_if = "Option::is_none")]
     pub routing_mark: Option<u32>,
-    #[serde(rename = "dialer-proxy")]
+    #[serde(rename = "dialer-proxy", skip_serializing_if = "Option::is_none")]
     pub dialer_proxy: Option<String>,
 
     // SMUX configuration
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub smux: Option<HashMap<String, serde_yaml::Value>>,
 
     // Catch-all for unknown fields
@@ -187,8 +204,6 @@ pub struct TransportConfig {
 #[derive(Debug, Serialize, Deserialize)]
 pub struct ClashConfig {
     pub proxies: Vec<ProxyConfig>,
-    #[serde(rename = "proxy-providers")]
-    pub proxy_providers: Option<HashMap<String, serde_yaml::Value>>,
     #[serde(flatten)]
     pub other: HashMap<String, serde_yaml::Value>,
 }
